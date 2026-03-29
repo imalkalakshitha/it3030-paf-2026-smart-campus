@@ -1,104 +1,315 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Container, Typography, Table, TableBody,
-    TableCell, TableContainer, TableHead, TableRow,
-    Paper, Chip, Button, Box
+    Container, Typography, Table, TableBody, TableCell,
+    TableContainer, TableHead, TableRow, Paper, Chip,
+    Button, Box, Dialog, DialogTitle, DialogContent,
+    DialogActions, TextField, MenuItem, Alert, Card,
+    CardContent, Grid
 } from '@mui/material';
-import { bookingAPI } from '../services/api';
+import AddIcon from '@mui/icons-material/Add';
+import BookOnlineIcon from '@mui/icons-material/BookOnline';
+import { bookingAPI, resourceAPI } from '../services/api';
 
 function Bookings() {
     const [bookings, setBookings] = useState([]);
+    const [resources, setResources] = useState([]);
+    const [open, setOpen] = useState(false);
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+    const [form, setForm] = useState({
+        resourceId: '',
+        bookingDate: '',
+        startTime: '',
+        endTime: '',
+        purpose: '',
+        attendees: ''
+    });
 
-    useEffect(() => { fetchBookings(); }, []);
+    const userId = localStorage.getItem('userId') || 1;
+
+    useEffect(() => {
+        fetchBookings();
+        fetchResources();
+    }, []);
 
     const fetchBookings = async () => {
-        const res = await bookingAPI.getAll();
-        setBookings(res.data);
+        try {
+            const res = await bookingAPI.getAll();
+            setBookings(res.data);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const fetchResources = async () => {
+        try {
+            const res = await resourceAPI.getAll();
+            setResources(res.data);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleSubmit = async () => {
+        setError('');
+        if (!form.resourceId || !form.bookingDate ||
+            !form.startTime || !form.endTime || !form.purpose) {
+            setError('Please fill all required fields!');
+            return;
+        }
+        try {
+            await bookingAPI.create({
+                user: { id: parseInt(userId) },
+                resource: { id: parseInt(form.resourceId) },
+                bookingDate: form.bookingDate,
+                startTime: form.startTime + ':00',
+                endTime: form.endTime + ':00',
+                purpose: form.purpose,
+                attendees: parseInt(form.attendees) || 0
+            });
+            setSuccess('Booking created successfully!');
+            setOpen(false);
+            setForm({
+                resourceId: '', bookingDate: '',
+                startTime: '', endTime: '',
+                purpose: '', attendees: ''
+            });
+            fetchBookings();
+        } catch (err) {
+            setError(err.response?.data?.message ||
+                'Booking conflict! This resource is already booked.');
+        }
     };
 
     const handleApprove = async (id) => {
-        await bookingAPI.approve(id, 'Approved');
+        await bookingAPI.approve(id, 'Approved by admin');
         fetchBookings();
     };
 
     const handleReject = async (id) => {
-        await bookingAPI.reject(id, 'Rejected');
+        await bookingAPI.reject(id, 'Rejected by admin');
         fetchBookings();
     };
 
-    const statusColor = (status) => {
-        const colors = {
-            PENDING: 'warning', APPROVED: 'success',
-            REJECTED: 'error', CANCELLED: 'default'
-        };
-        return colors[status] || 'default';
+    const handleCancel = async (id) => {
+        await bookingAPI.cancel(id);
+        fetchBookings();
     };
 
+    const statusColor = (status) => ({
+        PENDING: 'warning', APPROVED: 'success',
+        REJECTED: 'error', CANCELLED: 'default'
+    }[status] || 'default');
+
+    // Stats
+    const pending = bookings.filter(
+        b => b.status === 'PENDING').length;
+    const approved = bookings.filter(
+        b => b.status === 'APPROVED').length;
+
     return (
-        <Container sx={{ mt: 4 }}>
-            <Typography variant="h4" gutterBottom>Bookings</Typography>
-            <TableContainer component={Paper}>
-                <Table>
-                    <TableHead>
-                        <TableRow sx={{ backgroundColor: '#1976d2' }}>
-                            <TableCell sx={{ color: 'white' }}>ID</TableCell>
-                            <TableCell sx={{ color: 'white' }}>
-                                Resource
-                            </TableCell>
-                            <TableCell sx={{ color: 'white' }}>Date</TableCell>
-                            <TableCell sx={{ color: 'white' }}>Time</TableCell>
-                            <TableCell sx={{ color: 'white' }}>
-                                Purpose
-                            </TableCell>
-                            <TableCell sx={{ color: 'white' }}>Status</TableCell>
-                            <TableCell sx={{ color: 'white' }}>
-                                Actions
-                            </TableCell>
-                        </TableRow>
-                    </TableHead>
-                    <TableBody>
-                        {bookings.map((b) => (
-                            <TableRow key={b.id}>
-                                <TableCell>{b.id}</TableCell>
-                                <TableCell>
-                                    {b.resource?.name}
-                                </TableCell>
-                                <TableCell>{b.bookingDate}</TableCell>
-                                <TableCell>
-                                    {b.startTime} - {b.endTime}
-                                </TableCell>
-                                <TableCell>{b.purpose}</TableCell>
-                                <TableCell>
-                                    <Chip label={b.status}
-                                        color={statusColor(b.status)}
-                                        size="small" />
-                                </TableCell>
-                                <TableCell>
-                                    {b.status === 'PENDING' && (
-                                        <Box display="flex" gap={1}>
-                                            <Button size="small"
-                                                variant="contained"
-                                                color="success"
-                                                onClick={() => 
-                                                    handleApprove(b.id)}>
-                                                Approve
-                                            </Button>
-                                            <Button size="small"
-                                                variant="contained"
-                                                color="error"
-                                                onClick={() => 
-                                                    handleReject(b.id)}>
-                                                Reject
-                                            </Button>
-                                        </Box>
-                                    )}
-                                </TableCell>
+        <Box sx={{ backgroundColor: '#F5F7FA', minHeight: '100vh', pb: 4 }}>
+            <Container sx={{ pt: 4 }}>
+
+                {/* Header */}
+                <Box display="flex" justifyContent="space-between"
+                     alignItems="center" mb={3}>
+                    <Box display="flex" alignItems="center" gap={2}>
+                        <BookOnlineIcon sx={{ fontSize: 35, color: '#1976d2' }} />
+                        <Typography variant="h4" fontWeight="bold">
+                            Booking Management
+                        </Typography>
+                    </Box>
+                    <Button variant="contained" startIcon={<AddIcon />}
+                        onClick={() => { setOpen(true); setError(''); setSuccess(''); }}
+                        sx={{ borderRadius: 2, px: 3 }}>
+                        New Booking
+                    </Button>
+                </Box>
+
+                {success && (
+                    <Alert severity="success" sx={{ mb: 2 }}
+                           onClose={() => setSuccess('')}>
+                        {success}
+                    </Alert>
+                )}
+
+                {/* Stats */}
+                <Grid container spacing={2} mb={3}>
+                    {[
+                        { label: 'Total', value: bookings.length, color: '#1976d2' },
+                        { label: 'Pending', value: pending, color: '#f57c00' },
+                        { label: 'Approved', value: approved, color: '#388e3c' },
+                    ].map((s, i) => (
+                        <Grid item xs={4} key={i}>
+                            <Card elevation={2} sx={{ borderRadius: 2, textAlign: 'center' }}>
+                                <CardContent sx={{ py: 1.5 }}>
+                                    <Typography variant="h4"
+                                                fontWeight="bold"
+                                                color={s.color}>
+                                        {s.value}
+                                    </Typography>
+                                    <Typography variant="body2"
+                                                color="textSecondary">
+                                        {s.label}
+                                    </Typography>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    ))}
+                </Grid>
+
+                {/* Table */}
+                <TableContainer component={Paper} elevation={2}
+                                sx={{ borderRadius: 2 }}>
+                    <Table>
+                        <TableHead>
+                            <TableRow sx={{ backgroundColor: '#1976d2' }}>
+                                {['ID', 'Resource', 'Date', 'Time',
+                                  'Purpose', 'Attendees', 'Status', 'Actions']
+                                    .map(h => (
+                                    <TableCell key={h}
+                                        sx={{ color: 'white', fontWeight: 'bold' }}>
+                                        {h}
+                                    </TableCell>
+                                ))}
                             </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-            </TableContainer>
-        </Container>
+                        </TableHead>
+                        <TableBody>
+                            {bookings.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={8} align="center"
+                                               sx={{ py: 4, color: 'gray' }}>
+                                        No bookings yet. Click "New Booking" to add one!
+                                    </TableCell>
+                                </TableRow>
+                            ) : (
+                                bookings.map((b) => (
+                                    <TableRow key={b.id}
+                                        sx={{ '&:hover': { backgroundColor: '#F5F5F5' } }}>
+                                        <TableCell>{b.id}</TableCell>
+                                        <TableCell>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {b.resource?.name}
+                                            </Typography>
+                                            <Typography variant="caption" color="textSecondary">
+                                                {b.resource?.type}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell>{b.bookingDate}</TableCell>
+                                        <TableCell>
+                                            {b.startTime?.substring(0, 5)} -
+                                            {b.endTime?.substring(0, 5)}
+                                        </TableCell>
+                                        <TableCell>{b.purpose}</TableCell>
+                                        <TableCell>{b.attendees}</TableCell>
+                                        <TableCell>
+                                            <Chip label={b.status}
+                                                color={statusColor(b.status)}
+                                                size="small" />
+                                        </TableCell>
+                                        <TableCell>
+                                            <Box display="flex" gap={0.5}>
+                                                {b.status === 'PENDING' && (
+                                                    <>
+                                                        <Button size="small"
+                                                            variant="contained"
+                                                            color="success"
+                                                            sx={{ minWidth: 0, px: 1 }}
+                                                            onClick={() => handleApprove(b.id)}>
+                                                            ✓
+                                                        </Button>
+                                                        <Button size="small"
+                                                            variant="contained"
+                                                            color="error"
+                                                            sx={{ minWidth: 0, px: 1 }}
+                                                            onClick={() => handleReject(b.id)}>
+                                                            ✗
+                                                        </Button>
+                                                    </>
+                                                )}
+                                                {b.status === 'APPROVED' && (
+                                                    <Button size="small"
+                                                        variant="outlined"
+                                                        color="error"
+                                                        onClick={() => handleCancel(b.id)}>
+                                                        Cancel
+                                                    </Button>
+                                                )}
+                                            </Box>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
+                </TableContainer>
+
+                {/* New Booking Dialog */}
+                <Dialog open={open} onClose={() => setOpen(false)}
+                        maxWidth="sm" fullWidth>
+                    <DialogTitle sx={{
+                        background: 'linear-gradient(135deg, #1976d2, #42a5f5)',
+                        color: 'white', fontWeight: 'bold'
+                    }}>
+                        New Booking Request
+                    </DialogTitle>
+                    <DialogContent sx={{ pt: 2 }}>
+                        {error && (
+                            <Alert severity="error" sx={{ mb: 2, mt: 1 }}>
+                                {error}
+                            </Alert>
+                        )}
+                        <TextField fullWidth select label="Select Resource *"
+                            margin="normal" value={form.resourceId}
+                            onChange={e => setForm({...form, resourceId: e.target.value})}>
+                            {resources.map(r => (
+                                <MenuItem key={r.id} value={r.id}>
+                                    {r.name} — {r.type} (Capacity: {r.capacity})
+                                </MenuItem>
+                            ))}
+                        </TextField>
+                        <TextField fullWidth label="Booking Date *"
+                            type="date" margin="normal"
+                            InputLabelProps={{ shrink: true }}
+                            value={form.bookingDate}
+                            onChange={e => setForm({...form, bookingDate: e.target.value})} />
+                        <Grid container spacing={2}>
+                            <Grid item xs={6}>
+                                <TextField fullWidth label="Start Time *"
+                                    type="time" margin="normal"
+                                    InputLabelProps={{ shrink: true }}
+                                    value={form.startTime}
+                                    onChange={e => setForm({...form, startTime: e.target.value})} />
+                            </Grid>
+                            <Grid item xs={6}>
+                                <TextField fullWidth label="End Time *"
+                                    type="time" margin="normal"
+                                    InputLabelProps={{ shrink: true }}
+                                    value={form.endTime}
+                                    onChange={e => setForm({...form, endTime: e.target.value})} />
+                            </Grid>
+                        </Grid>
+                        <TextField fullWidth label="Purpose *"
+                            margin="normal" value={form.purpose}
+                            onChange={e => setForm({...form, purpose: e.target.value})} />
+                        <TextField fullWidth label="Expected Attendees"
+                            type="number" margin="normal"
+                            value={form.attendees}
+                            onChange={e => setForm({...form, attendees: e.target.value})} />
+                    </DialogContent>
+                    <DialogActions sx={{ p: 2 }}>
+                        <Button onClick={() => setOpen(false)}
+                                color="inherit">Cancel</Button>
+                        <Button variant="contained"
+                                onClick={handleSubmit}
+                                sx={{ px: 3 }}>
+                            Submit Booking
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+            </Container>
+        </Box>
     );
 }
 
